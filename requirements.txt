@@ -1,3 +1,4 @@
 streamlit
 opencv-python-headless
 streamlit_webrtc
+aioice==0.7.0
