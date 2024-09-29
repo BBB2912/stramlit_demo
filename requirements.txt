@@ -2,3 +2,4 @@ streamlit
 opencv-python-headless
 streamlit_webrtc
 aioice
+av
