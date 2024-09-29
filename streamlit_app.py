@@ -1,104 +1,64 @@
-import argparse
-import asyncio
-import json
+import streamlit as st
+from streamlit_webrtc import webrtc_streamer, VideoTransformerBase, WebRtcMode
+import cv2
+import av
 import logging
-import os
-import ssl
 
-from aiohttp import web
-from aiortc import RTCPeerConnection, RTCSessionDescription
-from aiortc.contrib.media import MediaPlayer
+# Enable debug logging for streamlit-webrtc
+logging.getLogger('streamlit-webrtc').setLevel(logging.DEBUG)
 
-ROOT = os.path.dirname(__file__)
-pcs = set()  # To keep track of peer connections
+# Suppress unnecessary warnings (optional)
+logging.getLogger("asyncio").setLevel(logging.ERROR)
 
-async def index(request):
-    # Serve the HTML page
-    return web.Response(content_type="text/html", text="""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>WebRTC Simple Stream</title>
-        <script>
-            let pc;
-            async function start() {
-                pc = new RTCPeerConnection();
-                
-                // Create an offer and set it as the local description
-                const offer = await pc.createOffer();
-                await pc.setLocalDescription(offer);
+# Streamlit sliders for Canny edge detection thresholds
+st.sidebar.title("Canny Edge Detection Parameters")
+th1 = st.sidebar.slider("Threshold1", 0, 500, 100)
+th2 = st.sidebar.slider("Threshold2", 0, 500, 200)
 
-                // Send the offer to the server
-                const response = await fetch("/offer", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ sdp: pc.localDescription.sdp, type: pc.localDescription.type })
-                });
+# Define the Video Transformer using VideoTransformerBase
+class CannyEdgeTransformer(VideoTransformerBase):
+    def __init__(self):
+        super().__init__()  # Call the base class constructor
+        self.th1 = th1
+        self.th2 = th2
 
-                const answer = await response.json();
-                await pc.setRemoteDescription(new RTCSessionDescription(answer));
+    def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
+        # Update thresholds based on current slider values
+        self.th1 = th1
+        self.th2 = th2
 
-                pc.ontrack = (event) => {
-                    const video = document.createElement("video");
-                    video.srcObject = event.streams[0];
-                    video.autoplay = true;
-                    document.body.appendChild(video);
-                };
-            }
-        </script>
-    </head>
-    <body>
-        <h1>Start WebRTC Stream</h1>
-        <button onclick="start()">Start Streaming</button>
-    </body>
-    </html>
-    """)
+        # Convert frame to numpy array
+        img = frame.to_ndarray(format="bgr24")
 
-async def offer(request):
-    params = await request.json()
-    offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
+        # Convert to grayscale
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
-    pc = RTCPeerConnection()
-    pcs.add(pc)
+        # Apply Gaussian Blur to reduce noise (optional but recommended)
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
 
-    # Open media source from the webcam
-    player = MediaPlayer("/dev/video0")  # Adjust based on your platform
-    await pc.setRemoteDescription(offer)
-    
-    for t in pc.getTransceivers():
-        if t.kind == "video" and player.video:
-            pc.addTrack(player.video)
+        # Apply Canny Edge Detection
+        edges = cv2.Canny(blurred, self.th1, self.th2)
 
-    answer = await pc.createAnswer()
-    await pc.setLocalDescription(answer)
+        # Convert single channel edge image back to BGR for display
+        edges_colored = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
 
-    return web.Response(
-        content_type="application/json",
-        text=json.dumps({"sdp": pc.localDescription.sdp, "type": pc.localDescription.type})
-    )
+        # Create a new av.VideoFrame from the processed image
+        frame_out = av.VideoFrame.from_ndarray(edges_colored, format="bgr24")
 
-async def on_shutdown(app):
-    # Close all peer connections
-    coros = [pc.close() for pc in pcs]
-    await asyncio.gather(*coros)
-    pcs.clear()
+        return frame_out
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="WebRTC webcam demo")
-    parser.add_argument("--cert-file", help="SSL certificate file (for HTTPS)")
-    parser.add_argument("--key-file", help="SSL key file (for HTTPS)")
-    parser.add_argument("--host", default="0.0.0.0", help="Host for HTTP server (default: 0.0.0.0)")
-    parser.add_argument("--port", type=int, default=8080, help="Port for HTTP server (default: 8080)")
-    args = parser.parse_args()
+# Initialize Streamlit app layout
+st.title("Live Webcam Feed with Canny Edge Detection")
+st.write("Adjust the sliders in the sidebar to change the Canny edge detection thresholds.")
 
-    if args.cert_file:
-        ssl_context = ssl.SSLContext()
-        ssl_context.load_cert_chain(args.cert_file, args.key_file)
-    else:
-        ssl_context = None
+# Configure WebRTC streamer
+webrtc_streamer(
+    key="canny-edge",
+    mode=WebRtcMode.SENDRECV,  # Enable both sending and receiving video
+    video_processor_factory=CannyEdgeTransformer,  # Pass the transformer class
+    media_stream_constraints={"video": True, "audio": False},  # Enable video, disable audio
+    async_processing=True,  # Enable asynchronous frame processing for better performance
+)
 
-    app = web.Application()
-    app.on_shutdown.append(on_shutdown)
-    app.router.add_get("/", index)
-    app.router.add_post("/offer", offer)
-    web.run_app(app, host=args.host, port=args.port, ssl_context=ssl_context)
+# Display current threshold values
+st.sidebar.markdown(f"**Current Thresholds:**\n- Threshold1: {th1}\n- Threshold2: {th2}")
