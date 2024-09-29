@@ -1,8 +1,8 @@
-aiortc==0.9.28
-streamlit==0.86.0
-streamlit-webrtc==0.14.0
-opencv-python==4.5.3
+aiortc
+streamlit
+streamlit-webrtc
+opencv-python
 opencv-python-headless
-numpy==1.20.2
-av==8.0.3
-web==0.1.0
+numpy
+av
+web
