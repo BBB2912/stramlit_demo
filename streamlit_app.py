@@ -57,7 +57,7 @@ webrtc_streamer(
     mode=WebRtcMode.SENDRECV,  # Enable both sending and receiving video
     video_processor_factory=CannyEdgeTransformer,  # Pass the transformer class
     media_stream_constraints={"video": True, "audio": False},  # Enable video, disable audio
-    async_processing=False,  # Enable asynchronous frame processing for better performance
+    async_processing=True,  # Enable asynchronous frame processing for better performance
 )
 
 # Display current threshold values
