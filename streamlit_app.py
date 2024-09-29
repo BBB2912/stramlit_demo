@@ -61,4 +61,5 @@ webrtc_streamer(
 )
 
 # Display current threshold values
-st.sidebar.markdown(f"**Current Thresholds:**\n- Threshold1: {th1}\n- Threshold2: {th2}")
+with st.sidebar:
+    st.markdown(f"**Current Thresholds:**\n- Threshold1: {th1}\n- Threshold2: {th2}")
